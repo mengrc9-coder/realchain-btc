@@ -1,10 +1,12 @@
+.venv/
+venv/
 __pycache__/
 *.pyc
 *.db
 *.sqlite
 *.sqlite3
-.env
-.venv/
-venv/
+realchain_keystore_*.json
+*_wallet.json
+wallet_*.json
 .DS_Store
 Thumbs.db

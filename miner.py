@@ -1,65 +1,79 @@
 #!/usr/bin/env python3
-import argparse, hashlib, json, time, urllib.parse, urllib.request
-from typing import Any
+"""Independent PoW miner for RealChain-BTC V2 Final."""
+from __future__ import annotations
 
-def canonical_json(obj: Any) -> str:
-    return json.dumps(obj, sort_keys=True, separators=(',', ':'), ensure_ascii=False)
+import argparse
+import json
+import hashlib
+import time
+import requests
+from typing import Any, Dict
 
-def sha256_hex(data):
-    if isinstance(data, str): data = data.encode('utf-8')
+
+def canonical(obj: Any) -> str:
+    return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def sha256_hex(data: str | bytes) -> str:
+    if isinstance(data, str):
+        data = data.encode("utf-8")
     return hashlib.sha256(data).hexdigest()
 
-def block_header(b):
-    return {'height':int(b['height']),'previous_hash':b['previous_hash'],'merkle_root':b['merkle_root'],'timestamp':int(b['timestamp']),'difficulty':int(b['difficulty']),'nonce':int(b['nonce'])}
 
-def block_hash(h): return sha256_hex(canonical_json(h))
+def block_hash_payload(block: Dict[str, Any]) -> Dict[str, Any]:
+    b = dict(block)
+    b.pop("hash", None)
+    return b
 
-def get_json(url):
-    with urllib.request.urlopen(url, timeout=30) as r:
-        return json.loads(r.read().decode('utf-8'))
 
-def post_json(url, data):
-    req = urllib.request.Request(url, data=json.dumps(data, ensure_ascii=False).encode('utf-8'), headers={'Content-Type':'application/json'}, method='POST')
-    with urllib.request.urlopen(req, timeout=30) as r:
-        return json.loads(r.read().decode('utf-8'))
+def calc_block_hash(block: Dict[str, Any]) -> str:
+    return sha256_hex(canonical(block_hash_payload(block)))
 
-def mine_once(node_url, reward_address, max_nonce=20000000):
-    node_url = node_url.rstrip('/')
-    q = urllib.parse.urlencode({'miner_address': reward_address})
-    resp = get_json(f'{node_url}/api/mining/template?{q}')
-    if not resp.get('ok'):
-        raise RuntimeError(resp.get('error', 'failed to get block template'))
-    block = resp['template']
-    prefix = '0' * int(block['difficulty'])
-    print(f"[miner] height={block['height']} txs={len(block['txs'])} fees={block['fees']} difficulty={block['difficulty']}")
-    print(f"[miner] reward address={reward_address}")
-    start = time.time()
-    for nonce in range(max_nonce):
-        block['nonce'] = nonce
-        if nonce % 50000 == 0:
-            block['timestamp'] = int(time.time())
-        h = block_hash(block_header(block))
-        if h.startswith(prefix):
-            block['hash'] = h
-            print(f"[miner] solved nonce={nonce} hash={h} elapsed={time.time()-start:.2f}s")
-            return post_json(f'{node_url}/api/block/submit', block)
-    raise RuntimeError('max_nonce reached')
+
+def mine_once(node: str, reward_address: str, status_every: int = 10000) -> Dict[str, Any]:
+    node = node.rstrip("/")
+    tpl = requests.get(node + "/mine/template", params={"address": reward_address}, timeout=10).json()
+    if not tpl.get("ok"):
+        raise RuntimeError(tpl.get("error", "template failed"))
+    block = tpl["block"]
+    difficulty = int(block["difficulty"])
+    target_prefix = "0" * difficulty
+    nonce = 0
+    started = time.time()
+    while True:
+        block["nonce"] = nonce
+        block["timestamp"] = int(time.time())
+        block["hash"] = calc_block_hash(block)
+        if block["hash"].startswith(target_prefix):
+            res = requests.post(node + "/blocks", json={"block": block}, timeout=10).json()
+            return {"template": tpl, "submit": res, "block": block, "seconds": round(time.time() - started, 3), "nonce": nonce}
+        nonce += 1
+        if status_every and nonce % status_every == 0:
+            rate = nonce / max(time.time() - started, 0.001)
+            print(f"mining height={block['height']} nonce={nonce} hash={block['hash'][:16]}... rate={rate:.0f} H/s", flush=True)
+
 
 def main():
-    p = argparse.ArgumentParser(description='RealChain-BTC V1 independent miner')
-    p.add_argument('--node', default='http://127.0.0.1:8111')
-    p.add_argument('--reward-address', required=True)
-    p.add_argument('--once', action='store_true')
-    p.add_argument('--interval', type=int, default=3)
-    a = p.parse_args()
-    if a.once:
-        print(mine_once(a.node, a.reward_address))
-        return
-    print('[miner] loop mode, press Ctrl+C to stop')
+    parser = argparse.ArgumentParser(description="RealChain-BTC V2 Final independent miner")
+    parser.add_argument("--node", required=True, help="node API, e.g. http://192.168.31.210:8111")
+    parser.add_argument("--reward-address", required=True, help="RLC address receiving coinbase reward")
+    parser.add_argument("--once", action="store_true", help="mine one block and exit")
+    parser.add_argument("--status-every", type=int, default=10000)
+    args = parser.parse_args()
+
     while True:
         try:
-            print('[miner] submitted:', mine_once(a.node, a.reward_address))
-        except Exception as e:
-            print('[miner] error:', e)
-        time.sleep(a.interval)
-if __name__ == '__main__': main()
+            result = mine_once(args.node, args.reward_address, args.status_every)
+            b = result["block"]
+            submit = result["submit"]
+            print(f"MINED height={b['height']} hash={b['hash']} txs={len(b['txs'])} nonce={result['nonce']} seconds={result['seconds']}")
+            print("SUBMIT:", json.dumps(submit, ensure_ascii=False))
+        except Exception as exc:
+            print("MINER ERROR:", exc)
+        if args.once:
+            break
+        time.sleep(1)
+
+
+if __name__ == "__main__":
+    main()

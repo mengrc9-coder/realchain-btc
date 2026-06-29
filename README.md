@@ -1,149 +1,255 @@
-# RealChain-BTC V1
+# RealChain-BTC V2 Final
 
-这是 RealChain-BTC 的第一个正式版本，目标是尽量向真实比特币架构靠拢。
+V2 Final 是 V1 的累计版本，不是平行版本。
 
-## V1 的角色拆分
+## V2 = V1 Stable + LAN P2P
+
+V2 保留 V1 的核心功能：
+
+- 创建钱包
+- 导入钱包
+- 私钥本地保管
+- 节点不保存私钥
+- 钱包本地签名交易
+- 节点验证签名
+- UTXO 余额模型
+- 交易进入 mempool
+- 独立 `miner.py` 挖矿
+- coinbase 奖励
+- 区块确认交易
+- 查询余额、区块、mempool、链高度
+
+V2 新增：
+
+- 两台电脑局域网双节点：Node A / Node B
+- 节点启动时通过 `--peers` 自动连接
+- 交易自动广播
+- 区块自动广播
+- 节点定时自动同步更长合法链
+- `wallet.html` 钱包页面和 `network.html` 网络监控页面分离
+- 创建钱包后下载 keystore JSON，刷新页面后需要重新导入
+
+---
+
+## 1. 安装依赖
+
+两台电脑都进入项目目录：
+
+```powershell
+python -m pip install -r requirements.txt
+```
+
+验证：
+
+```powershell
+python -c "import flask; import requests; import cryptography; print('ok')"
+```
+
+---
+
+## 2. 查询两台电脑的局域网 IP
+
+两台电脑都运行：
+
+```powershell
+ipconfig
+```
+
+找到 IPv4 地址。
+
+示例：
 
 ```text
-node_server.py        全节点：账本、UTXO、mempool、交易验证、区块验证
-web_wallet_server.py  网页钱包服务器：只提供页面文件
-miner.py              独立矿工：从节点拿 block template，本地 PoW，提交新区块
+电脑 A：192.168.31.210
+电脑 B：192.168.31.211
 ```
 
-核心原则：
+下面命令里的 IP 要换成你自己的。
 
-- 节点不保存任何用户私钥。
-- 网页服务器不保存任何用户私钥。
-- 用户私钥只保存在浏览器本地。
-- 刷新页面后钱包回到锁定状态，需要密码解锁才能签名。
-- 钱包页面不挖矿。
-- 矿工奖励地址由 `miner.py` 指定。
-- 节点只接收 signed transaction。
-- 节点验证签名、UTXO、双花、手续费。
-- 矿工独立执行 PoW。
+---
 
-## 安装依赖
+## 3. 电脑 A 启动 Node A
 
-```bash
-pip install -r requirements.txt
-```
-
-## 1. 启动全节点
-
-```bash
-python node_server.py --node A --host 127.0.0.1 --port 8111 --db node_v1.db --difficulty 2
-```
-
-打开节点接口：
-
-```text
-http://127.0.0.1:8111
-```
-
-如果返回 JSON，说明节点运行成功。
-
-## 2. 启动网页钱包
-
-```bash
-python web_wallet_server.py --host 127.0.0.1 --port 8000
+```powershell
+python node_server.py --node A --host 0.0.0.0 --port 8111 --db node_a_v2.db --difficulty 2 --external-url http://192.168.31.210:8111 --peers http://192.168.31.211:8111 --sync-interval 5
 ```
 
 浏览器打开：
 
 ```text
+http://192.168.31.210:8111
+```
+
+看到 JSON 说明 Node A 正常。
+
+---
+
+## 4. 电脑 B 启动 Node B
+
+```powershell
+python node_server.py --node B --host 0.0.0.0 --port 8111 --db node_b_v2.db --difficulty 2 --external-url http://192.168.31.211:8111 --peers http://192.168.31.210:8111 --sync-interval 5
+```
+
+浏览器打开：
+
+```text
+http://192.168.31.211:8111
+```
+
+看到 JSON 说明 Node B 正常。
+
+---
+
+## 5. 两台电脑都启动本地钱包页面
+
+两台电脑都运行：
+
+```powershell
+python web_wallet_server.py --host 127.0.0.1 --port 8000
+```
+
+两台电脑都打开：
+
+```text
 http://127.0.0.1:8000
 ```
 
-页面里的 Node API 填：
+进入：
 
 ```text
-http://127.0.0.1:8111
+wallet.html     钱包页面
+network.html    网络监控页面
 ```
 
-## 3. 创建钱包
+注意：钱包页面建议用 `127.0.0.1` 打开，这样浏览器 WebCrypto 能正常创建钱包。
 
-在网页钱包中输入密码，点击“创建新钱包”。
+---
 
-浏览器本地会生成：
+## 6. network.html 怎么用
 
-- 私钥
-- 公钥
-- 地址
-- 加密钱包 JSON
-
-密码只用于加密本地私钥，不会发送给节点。
-
-建议立刻点击“导出加密钱包 JSON”，保存备份。
-
-## 4. 运行独立矿工
-
-复制钱包页面里的地址，例如：
+打开：
 
 ```text
-RLC_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+http://127.0.0.1:8000/network.html
 ```
 
-然后在新终端运行：
-
-```bash
-python miner.py --node http://127.0.0.1:8111 --reward-address RLC_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx --once
-```
-
-如果想让矿工一直挖：
-
-```bash
-python miner.py --node http://127.0.0.1:8111 --reward-address RLC_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-```
-
-停止矿工按：
+填写：
 
 ```text
-Ctrl + C
+Node A API: http://192.168.31.210:8111
+Node B API: http://192.168.31.211:8111
 ```
 
-## 5. 转账实验
+点刷新状态。
 
-建议用两个浏览器模拟两个用户：
+正常情况下应该看到：
+
+- Node A peers 里有 Node B
+- Node B peers 里有 Node A
+- 两个节点高度一致
+- 两个节点 tip_hash 一致
+
+---
+
+## 7. wallet.html 怎么用
+
+打开：
 
 ```text
-Chrome：张三钱包
-Edge：李四钱包
+http://127.0.0.1:8000/wallet.html
 ```
 
-流程：
+Node API 可以填任意一个节点：
 
 ```text
-1. 张三创建钱包，复制张三地址
-2. 运行 miner.py，把奖励地址设为张三地址
-3. 张三刷新余额，看到 50 RLC
-4. 李四创建钱包，复制李四地址
-5. 张三输入李四地址、金额、手续费
-6. 张三浏览器本地签名并提交交易
-7. 交易进入 mempool
-8. 运行 miner.py 挖新区块
-9. 李四刷新余额，看到收到的 UTXO
+http://192.168.31.210:8111
 ```
 
-## V1 和真实比特币的差异
+或：
 
-V1 仍然是实验室版本，不是 Bitcoin Core。
+```text
+http://192.168.31.211:8111
+```
 
-主要差异：
+创建钱包后会下载：
 
-- 地址是 RLC_ 实验地址，不是真实 BTC 地址。
-- 浏览器 WebCrypto 使用 P-256，真实比特币使用 secp256k1。
-- 只有单节点，V2 才做多节点 P2P。
-- 没有 Bitcoin Script、SegWit、Taproot。
-- 没有累计工作量主链、分叉重组。
-- PoW 难度很低，只适合实验。
-- 不要用于真实资金。
+```text
+realchain_keystore_RLC_xxx.json
+```
 
-## 下一版 V2
+这个文件要自己保存，不要上传 GitHub。
 
-V2 目标：
+刷新页面后钱包不会自动恢复，需要重新导入 keystore 并输入密码解锁。
 
-- 多台电脑运行多个 full node。
-- 节点之间添加 peers。
-- 交易自动广播。
-- 区块自动广播。
-- 节点掉线后重新同步。
+---
+
+## 8. 挖矿
+
+复制钱包地址后，可以让矿工连接任意节点挖矿。
+
+连接 Node A 挖一次：
+
+```powershell
+python miner.py --node http://192.168.31.210:8111 --reward-address 你的RLC地址 --once
+```
+
+连接 Node B 挖一次：
+
+```powershell
+python miner.py --node http://192.168.31.211:8111 --reward-address 你的RLC地址 --once
+```
+
+挖完后去 `network.html` 看两个节点高度是否自动一致。
+
+---
+
+## 9. 验收测试
+
+### 测试 1：节点互联
+
+Node A 和 Node B 启动后，`network.html` 应显示双方互为 peer。
+
+### 测试 2：区块同步
+
+矿工连接 Node A 挖一个区块，Node B 应在几秒后自动同步到相同高度和 tip_hash。
+
+### 测试 3：反向区块同步
+
+矿工连接 Node B 挖一个区块，Node A 应在几秒后自动同步到相同高度和 tip_hash。
+
+### 测试 4：跨电脑钱包互通
+
+电脑 A 创建张三钱包，电脑 B 创建李四钱包。张三给李四地址转账，交易提交给 Node A 后，应广播到 Node B。矿工打包后，李四在电脑 B 刷新余额能看到收款。
+
+### 测试 5：私钥不共享
+
+电脑 A 创建的钱包不会自动出现在电脑 B。跨设备使用同一个钱包，需要导入 keystore 文件并输入密码。这是真实钱包逻辑。
+
+---
+
+## 10. 常见问题
+
+### 两台电脑互相打不开节点地址
+
+大概率是 Windows 防火墙。允许 Python 通过专用网络。
+
+### 创建钱包失败
+
+请用：
+
+```text
+http://127.0.0.1:8000/wallet.html
+```
+
+不要用局域网 IP 打开钱包页面。浏览器通常只允许 `localhost/127.0.0.1` 或 HTTPS 使用 WebCrypto。
+
+### V1 和 V2 会不会混乱
+
+不会。V2 使用独立文件夹和独立数据库：
+
+```text
+node_a_v2.db
+node_b_v2.db
+```
+
+运行 V2 前建议关闭 V1 的 8111 和 8000 端口程序。
