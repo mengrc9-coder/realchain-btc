@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RealChain-BTC Wallet</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<header class="topbar">
+  <div>
+    <strong>RealChain-BTC V2 Final</strong>
+    <span>Wallet</span>
+  </div>
+  <nav>
+    <a href="index.html">首页</a>
+    <a href="network.html">网络监控</a>
+  </nav>
+</header>
+
+<main>
+  <section class="card">
+    <h2>1. 连接节点</h2>
+    <p class="hint">钱包只连接节点 API。节点之间的 peer 互联不在钱包页面设置。</p>
+    <div class="row">
+      <label>Node API</label>
+      <input id="nodeApi" placeholder="http://192.168.31.210:8111" />
+      <button id="saveNodeBtn">保存</button>
+      <button id="testNodeBtn">连接测试</button>
+    </div>
+    <pre id="nodeStatus" class="log small"></pre>
+  </section>
+
+  <section class="grid two">
+    <div class="card">
+      <h2>2. 创建新钱包</h2>
+      <p class="hint">创建后自动下载 keystore JSON。刷新页面后不会自动恢复钱包，需要重新导入 keystore。</p>
+      <label>设置 keystore 密码</label>
+      <input id="newPassword" type="password" placeholder="用于加密钱包文件" />
+      <label>再次输入密码</label>
+      <input id="newPassword2" type="password" placeholder="重复密码" />
+      <button id="createWalletBtn" class="primary">创建新钱包并下载 keystore</button>
+    </div>
+
+    <div class="card">
+      <h2>3. 导入 / 解锁钱包</h2>
+      <label>导入 keystore 文件</label>
+      <input id="keystoreFile" type="file" accept=".json,application/json" />
+      <label>或者粘贴 keystore JSON</label>
+      <textarea id="keystoreText" rows="5" placeholder="把 keystore JSON 粘贴到这里"></textarea>
+      <button id="importTextBtn">从文本框导入</button>
+      <label>解锁密码</label>
+      <input id="unlockPassword" type="password" placeholder="输入 keystore 密码" />
+      <button id="unlockBtn" class="primary">解锁当前 keystore</button>
+      <button id="lockBtn">锁定钱包</button>
+      <button id="downloadKeystoreBtn">重新下载当前 keystore</button>
+      <button id="clearWalletBtn" class="danger">清除当前页面钱包</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>当前钱包</h2>
+    <div class="kv"><span>地址</span><code id="walletAddress">未导入</code></div>
+    <div class="kv"><span>状态</span><code id="walletLockState">未解锁</code></div>
+    <div class="kv"><span>余额</span><code id="balanceText">-</code></div>
+    <div class="row">
+      <button id="refreshBalanceBtn">刷新余额</button>
+      <button id="copyAddressBtn">复制地址</button>
+    </div>
+    <pre id="walletLog" class="log small"></pre>
+  </section>
+
+  <section class="card">
+    <h2>4. 转账</h2>
+    <p class="hint">交易由浏览器本地私钥签名，然后提交给当前 Node API。节点验证后自动广播给 peer。</p>
+    <label>收款地址</label>
+    <input id="toAddress" placeholder="RLC_..." />
+    <label>金额</label>
+    <input id="amount" type="number" min="1" step="1" value="1" />
+    <label>手续费</label>
+    <input id="fee" type="number" min="0" step="1" value="0" />
+    <button id="sendTxBtn" class="primary">签名并发送交易</button>
+    <pre id="txLog" class="log"></pre>
+  </section>
+</main>
+
+<script src="wallet.js"></script>
+</body>
+</html>

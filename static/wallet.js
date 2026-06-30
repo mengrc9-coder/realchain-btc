@@ -1,37 +1,229 @@
-let currentWallet = null;
-let lockedWalletFile = null;
-let nodeUrl = localStorage.getItem('realchain_node_url') || 'http://127.0.0.1:8111';
-document.getElementById('nodeUrl').value = nodeUrl;
-function enc(s){return new TextEncoder().encode(s)}
-function dec(b){return new TextDecoder().decode(b)}
-function toBase64(buffer){const bytes=new Uint8Array(buffer);let binary='';for(const b of bytes)binary+=String.fromCharCode(b);return btoa(binary)}
-function fromBase64(b64){const binary=atob(b64);const bytes=new Uint8Array(binary.length);for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);return bytes.buffer}
-async function sha256Hex(str){const d=await crypto.subtle.digest('SHA-256',enc(str));return Array.from(new Uint8Array(d)).map(b=>b.toString(16).padStart(2,'0')).join('')}
-function canonicalStringify(obj){if(obj===null||typeof obj!=='object')return JSON.stringify(obj);if(Array.isArray(obj))return '['+obj.map(canonicalStringify).join(',')+']';const keys=Object.keys(obj).sort();return '{'+keys.map(k=>JSON.stringify(k)+':'+canonicalStringify(obj[k])).join(',')+'}'}
-function publicJwkCanonical(j){return{crv:j.crv,kty:j.kty,x:j.x,y:j.y}}
-async function addressFromPublicJwk(j){const h=await sha256Hex(canonicalStringify(publicJwkCanonical(j)));return 'RLC_'+h.slice(0,40)}
-function saveNodeUrl(){nodeUrl=document.getElementById('nodeUrl').value.trim().replace(/\/$/,'');localStorage.setItem('realchain_node_url',nodeUrl);log('nodeStatus','已保存 Node API: '+nodeUrl)}
-function api(path,opt={}){return fetch(nodeUrl+path,opt)}
-function log(id,obj){document.getElementById(id).textContent=typeof obj==='string'?obj:JSON.stringify(obj,null,2)}
-function activeAddress(){if(currentWallet)return currentWallet.address;if(lockedWalletFile)return lockedWalletFile.address;return null}
-function showWallet(){const addr=activeAddress();if(currentWallet){document.getElementById('walletState').textContent='已解锁';document.getElementById('myAddress').textContent=currentWallet.address}else if(lockedWalletFile){document.getElementById('walletState').textContent='已锁定，本地有钱包';document.getElementById('myAddress').textContent=lockedWalletFile.address}else{document.getElementById('walletState').textContent='没有本地钱包';document.getElementById('myAddress').textContent='-';document.getElementById('myBalance').textContent='0 RLC';document.getElementById('utxoList').innerHTML=''}}
-function loadLocalWalletMetadata(){const saved=localStorage.getItem('realchain_wallet_v1');if(!saved){lockedWalletFile=null;currentWallet=null;showWallet();return}try{lockedWalletFile=JSON.parse(saved);currentWallet=null;showWallet();refreshWalletData()}catch{lockedWalletFile=null;currentWallet=null;showWallet()}}
-async function deriveAesKey(password,salt){const baseKey=await crypto.subtle.importKey('raw',enc(password),'PBKDF2',false,['deriveKey']);return crypto.subtle.deriveKey({name:'PBKDF2',salt,iterations:150000,hash:'SHA-256'},baseKey,{name:'AES-GCM',length:256},false,['encrypt','decrypt'])}
-async function encryptPrivateJwk(privateJwk,password){const salt=crypto.getRandomValues(new Uint8Array(16));const iv=crypto.getRandomValues(new Uint8Array(12));const key=await deriveAesKey(password,salt);const ciphertext=await crypto.subtle.encrypt({name:'AES-GCM',iv},key,enc(JSON.stringify(privateJwk)));return{version:1,crypto:'PBKDF2-SHA256-AES-GCM',salt:toBase64(salt),iv:toBase64(iv),ciphertext:toBase64(ciphertext)}}
-async function decryptPrivateJwk(encrypted,password){const salt=new Uint8Array(fromBase64(encrypted.salt));const iv=new Uint8Array(fromBase64(encrypted.iv));const key=await deriveAesKey(password,salt);const plaintext=await crypto.subtle.decrypt({name:'AES-GCM',iv},key,fromBase64(encrypted.ciphertext));return JSON.parse(dec(plaintext))}
-async function createWallet(){const password=document.getElementById('walletPassword').value;if(!password||password.length<6){alert('钱包密码至少 6 位。');return}const keyPair=await crypto.subtle.generateKey({name:'ECDSA',namedCurve:'P-256'},true,['sign','verify']);const privateJwk=await crypto.subtle.exportKey('jwk',keyPair.privateKey);const publicJwk=await crypto.subtle.exportKey('jwk',keyPair.publicKey);const address=await addressFromPublicJwk(publicJwk);const encryptedPrivateKey=await encryptPrivateJwk(privateJwk,password);const walletFile={type:'realchain-btc-v1-encrypted-wallet',created_at:new Date().toISOString(),address,public_key:publicJwkCanonical(publicJwk),encrypted_private_key:encryptedPrivateKey};localStorage.setItem('realchain_wallet_v1',JSON.stringify(walletFile));document.getElementById('walletBackup').value=JSON.stringify(walletFile,null,2);lockedWalletFile=walletFile;currentWallet={address,publicJwk:publicJwkCanonical(publicJwk),privateKey:keyPair.privateKey};showWallet();await refreshWalletData();alert('钱包创建成功。请导出并备份加密钱包 JSON。')}
-async function unlockWallet(){const password=document.getElementById('walletPassword').value;const saved=localStorage.getItem('realchain_wallet_v1');if(!saved){alert('浏览器本地没有钱包。');return}try{const walletFile=JSON.parse(saved);const privateJwk=await decryptPrivateJwk(walletFile.encrypted_private_key,password);const privateKey=await crypto.subtle.importKey('jwk',privateJwk,{name:'ECDSA',namedCurve:'P-256'},true,['sign']);lockedWalletFile=walletFile;currentWallet={address:walletFile.address,publicJwk:walletFile.public_key,privateKey};showWallet();await refreshWalletData()}catch{alert('解锁失败：密码错误或钱包文件损坏。')}}
-function logoutWallet(){currentWallet=null;showWallet()}
-function exportWallet(){const saved=localStorage.getItem('realchain_wallet_v1');if(!saved){alert('没有本地钱包。');return}document.getElementById('walletBackup').value=JSON.stringify(JSON.parse(saved),null,2)}
-function importWallet(){try{const text=document.getElementById('walletBackup').value.trim();const walletFile=JSON.parse(text);if(!walletFile.address||!walletFile.public_key||!walletFile.encrypted_private_key)throw new Error('钱包 JSON 格式不对。');localStorage.setItem('realchain_wallet_v1',JSON.stringify(walletFile));lockedWalletFile=walletFile;currentWallet=null;showWallet();refreshWalletData();alert('已导入到浏览器本地。请输入密码解锁后才能转账。')}catch(e){alert('导入失败：'+e.message)}}
-function forgetLocalWallet(){if(!confirm('这只会移除当前浏览器本地钱包。没有备份 JSON 和密码就无法恢复。确定移除？'))return;localStorage.removeItem('realchain_wallet_v1');lockedWalletFile=null;currentWallet=null;showWallet()}
-async function copyAddress(){const addr=activeAddress();if(!addr){alert('没有钱包地址。');return}await navigator.clipboard.writeText(addr);alert('地址已复制。')}
-async function loadNodeStatus(){saveNodeUrl();try{const r=await api('/api/status');log('nodeStatus',await r.json())}catch(e){log('nodeStatus','连接失败：'+e.message)}}
-async function refreshWalletData(){showWallet();const addr=activeAddress();if(!addr)return;try{const r=await api('/api/utxos/'+encodeURIComponent(addr));const data=await r.json();document.getElementById('myBalance').textContent=data.balance+' RLC';const list=document.getElementById('utxoList');if(!data.utxos||data.utxos.length===0){list.innerHTML='<div class="item small">暂无可花费 UTXO。请让独立 miner.py 把挖矿奖励发到这个地址。</div>'}else{list.innerHTML=data.utxos.map(u=>`<div class="item"><div><b>${u.amount} RLC</b></div><div class="small">txid: ${u.txid}</div><div class="small">vout: ${u.vout} | created_height: ${u.created_height}</div></div>`).join('')}}catch(e){alert('刷新余额失败：'+e.message)}}
-function selectUtxos(utxos,needed){let selected=[],total=0;for(const u of utxos){selected.push(u);total+=Number(u.amount);if(total>=needed)break}if(total<needed)throw new Error('余额不足。');return{selected,total}}
-function signingPayload(tx){return{version:tx.version,timestamp:tx.timestamp,inputs:tx.inputs.map(i=>({txid:i.txid,vout:Number(i.vout)})),outputs:tx.outputs.map(o=>({address:o.address,amount:Number(o.amount)}))}}
-async function signTransaction(tx){const message=canonicalStringify(signingPayload(tx));const signature=await crypto.subtle.sign({name:'ECDSA',hash:'SHA-256'},currentWallet.privateKey,enc(message));const sigB64=toBase64(signature);tx.inputs=tx.inputs.map(i=>({...i,public_key:currentWallet.publicJwk,signature:sigB64}));return tx}
-async function createAndSubmitTx(){if(!currentWallet){alert('钱包未解锁。请输入密码解锁后才能签名转账。');return}const toAddress=document.getElementById('toAddress').value.trim();const amount=Number(document.getElementById('amount').value);const fee=Number(document.getElementById('fee').value);if(!toAddress.startsWith('RLC_')){alert('收款地址必须以 RLC_ 开头。');return}if(!Number.isInteger(amount)||amount<=0){alert('金额必须是正整数。');return}if(!Number.isInteger(fee)||fee<0){alert('手续费必须是非负整数。');return}try{const r=await api('/api/utxos/'+encodeURIComponent(currentWallet.address));const data=await r.json();const needed=amount+fee;const{selected,total}=selectUtxos(data.utxos,needed);const change=total-needed;const tx={version:1,timestamp:Math.floor(Date.now()/1000),inputs:selected.map(u=>({txid:u.txid,vout:Number(u.vout)})),outputs:[{address:toAddress,amount:amount}]};if(change>0)tx.outputs.push({address:currentWallet.address,amount:change});const signedTx=await signTransaction(tx);const res=await api('/api/tx/submit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(signedTx)});log('txResult',await res.json());await loadMempool();await refreshWalletData()}catch(e){log('txResult','转账失败：'+e.message)}}
-async function loadMempool(){try{const r=await api('/api/mempool');const data=await r.json();const list=document.getElementById('mempoolList');if(!data.transactions||data.transactions.length===0){list.innerHTML='<div class="item small">交易池为空。</div>';return}list.innerHTML=data.transactions.map(t=>`<div class="item"><div><b>fee: ${t.fee} RLC</b></div><div class="small">txid: ${t.txid}</div><div class="small">inputs: ${t.inputs.length} | outputs: ${t.outputs.length}</div></div>`).join('')}catch(e){document.getElementById('mempoolList').innerHTML=`<div class="item error">加载失败：${e.message}</div>`}}
-async function loadBlocks(){try{const r=await api('/api/blocks?limit=10');const data=await r.json();const list=document.getElementById('blockList');list.innerHTML=data.blocks.map(b=>`<div class="item"><div><b>Height ${b.height}</b> <span class="small">confirmations: ${b.confirmations}</span></div><div class="small">hash: ${b.hash}</div><div class="small">prev: ${b.previous_hash}</div><div class="small">txs: ${b.txs.length} | miner: ${b.miner||'-'}</div></div>`).join('')}catch(e){document.getElementById('blockList').innerHTML=`<div class="item error">加载失败：${e.message}</div>`}}
-loadLocalWalletMetadata();loadNodeStatus();loadBlocks();loadMempool();
+const enc = new TextEncoder();
+const dec = new TextDecoder();
+
+let currentKeystore = null;
+let currentPrivateKey = null;
+let currentAddress = null;
+
+function $(id) { return document.getElementById(id); }
+function log(id, obj) { $(id).textContent = typeof obj === 'string' ? obj : JSON.stringify(obj, null, 2); }
+function getNodeApi() { return ($('nodeApi').value || localStorage.getItem('realchain_node_api') || '').trim().replace(/\/$/, ''); }
+function setStatus() {
+  $('walletAddress').textContent = currentKeystore?.address || currentAddress || '未导入';
+  $('walletLockState').textContent = currentPrivateKey ? '已解锁，仅本页面内存持有私钥' : (currentKeystore ? '已导入 keystore，未解锁' : '未导入');
+}
+
+function canonicalize(value) {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (value && typeof value === 'object') {
+    const out = {};
+    Object.keys(value).sort().forEach(k => {
+      if (value[k] !== undefined) out[k] = canonicalize(value[k]);
+    });
+    return out;
+  }
+  return value;
+}
+function canonicalStringify(value) { return JSON.stringify(canonicalize(value)); }
+
+function abToB64(buf) {
+  const bytes = new Uint8Array(buf);
+  let binary = '';
+  for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary);
+}
+function b64ToAb(b64) {
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes.buffer;
+}
+function abToHex(buf) {
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+async function sha256Hex(data) {
+  const buf = typeof data === 'string' ? enc.encode(data) : data;
+  return abToHex(await crypto.subtle.digest('SHA-256', buf));
+}
+async function deriveAddress(publicKeySpki) {
+  const h = await sha256Hex(publicKeySpki);
+  return 'RLC_' + h.slice(0, 40);
+}
+async function passwordKey(password, salt) {
+  const material = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt, iterations: 150000, hash: 'SHA-256' },
+    material,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt']
+  );
+}
+function downloadJson(filename, obj) {
+  const blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
+async function createWallet() {
+  const p1 = $('newPassword').value;
+  const p2 = $('newPassword2').value;
+  if (!p1 || p1.length < 6) throw new Error('密码至少 6 位');
+  if (p1 !== p2) throw new Error('两次密码不一致');
+  const keys = await crypto.subtle.generateKey(
+    { name: 'ECDSA', namedCurve: 'P-256' },
+    true,
+    ['sign', 'verify']
+  );
+  const pkcs8 = await crypto.subtle.exportKey('pkcs8', keys.privateKey);
+  const spki = await crypto.subtle.exportKey('spki', keys.publicKey);
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await passwordKey(p1, salt);
+  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, pkcs8);
+  const address = await deriveAddress(spki);
+  currentKeystore = {
+    version: 1,
+    project: 'RealChain-BTC',
+    curve: 'P-256',
+    kdf: 'PBKDF2-SHA256',
+    kdf_iterations: 150000,
+    cipher: 'AES-256-GCM',
+    address,
+    public_key: abToB64(spki),
+    crypto: { salt: abToB64(salt), iv: abToB64(iv), ciphertext: abToB64(ciphertext) },
+    warning: 'Keep this keystore file by yourself. Nodes and servers do not store your private key.'
+  };
+  currentPrivateKey = keys.privateKey;
+  currentAddress = address;
+  setStatus();
+  downloadJson(`realchain_keystore_${address}.json`, currentKeystore);
+  log('walletLog', `钱包创建成功，keystore 已下载。地址：${address}`);
+}
+async function unlockKeystore() {
+  if (!currentKeystore) throw new Error('请先导入 keystore');
+  const password = $('unlockPassword').value;
+  if (!password) throw new Error('请输入密码');
+  const salt = new Uint8Array(b64ToAb(currentKeystore.crypto.salt));
+  const iv = new Uint8Array(b64ToAb(currentKeystore.crypto.iv));
+  const ciphertext = b64ToAb(currentKeystore.crypto.ciphertext);
+  const key = await passwordKey(password, salt);
+  const pkcs8 = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext);
+  currentPrivateKey = await crypto.subtle.importKey('pkcs8', pkcs8, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);
+  currentAddress = currentKeystore.address;
+  setStatus();
+  log('walletLog', `解锁成功。私钥只在当前页面内存中，刷新或锁定后会消失。`);
+}
+function importKeystoreObject(obj) {
+  if (!obj.address || !obj.public_key || !obj.crypto) throw new Error('不是有效 keystore');
+  currentKeystore = obj;
+  currentPrivateKey = null;
+  currentAddress = obj.address;
+  setStatus();
+  log('walletLog', `keystore 已导入：${obj.address}`);
+}
+function signPayload(tx) {
+  return {
+    version: tx.version,
+    type: 'transfer',
+    inputs: tx.inputs,
+    outputs: tx.outputs,
+    fee: tx.fee,
+    timestamp: tx.timestamp,
+    pubkey: tx.pubkey
+  };
+}
+function txidPayload(tx) {
+  const x = { ...tx };
+  delete x.txid;
+  return x;
+}
+async function refreshBalance() {
+  if (!currentKeystore?.address) throw new Error('请先创建或导入钱包');
+  const node = getNodeApi();
+  if (!node) throw new Error('请先填写 Node API');
+  const res = await fetch(`${node}/balance/${currentKeystore.address}`);
+  const data = await res.json();
+  $('balanceText').textContent = data.balance;
+  log('walletLog', data);
+}
+async function sendTx() {
+  if (!currentKeystore || !currentPrivateKey) throw new Error('请先导入并解锁钱包');
+  const node = getNodeApi();
+  if (!node) throw new Error('请先填写 Node API');
+  const to = $('toAddress').value.trim();
+  const amount = parseInt($('amount').value, 10);
+  const fee = parseInt($('fee').value || '0', 10);
+  if (!to.startsWith('RLC_')) throw new Error('收款地址格式不对');
+  if (!Number.isInteger(amount) || amount <= 0) throw new Error('金额必须是正整数');
+  if (!Number.isInteger(fee) || fee < 0) throw new Error('手续费不能为负数');
+  const utxoRes = await fetch(`${node}/utxos/${currentKeystore.address}`);
+  const utxoData = await utxoRes.json();
+  const need = amount + fee;
+  let selected = [], total = 0;
+  for (const u of utxoData.utxos || []) {
+    selected.push(u); total += parseInt(u.amount, 10);
+    if (total >= need) break;
+  }
+  if (total < need) throw new Error(`余额不足，需要 ${need}，当前可用 ${total}`);
+  const outputs = [{ address: to, amount }];
+  const change = total - need;
+  if (change > 0) outputs.push({ address: currentKeystore.address, amount: change });
+  const tx = {
+    version: 1,
+    type: 'transfer',
+    inputs: selected.map(u => ({ txid: u.txid, index: u.index, address: u.address, amount: u.amount })),
+    outputs,
+    fee,
+    timestamp: Math.floor(Date.now() / 1000),
+    pubkey: currentKeystore.public_key
+  };
+  const msg = canonicalStringify(signPayload(tx));
+  const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, currentPrivateKey, enc.encode(msg));
+  tx.signatures = selected.map(() => abToB64(sig));
+  tx.txid = await sha256Hex(canonicalStringify(txidPayload(tx)));
+  const res = await fetch(`${node}/transactions`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tx })
+  });
+  const data = await res.json();
+  log('txLog', data);
+  if (!data.ok) throw new Error(data.error || '交易提交失败');
+  await refreshBalance();
+}
+async function testNode() {
+  const node = getNodeApi();
+  if (!node) throw new Error('请填写 Node API');
+  const res = await fetch(`${node}/status`);
+  const data = await res.json();
+  log('nodeStatus', data);
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+  $('nodeApi').value = localStorage.getItem('realchain_node_api') || '';
+  setStatus();
+  $('saveNodeBtn').onclick = () => { localStorage.setItem('realchain_node_api', getNodeApi()); log('nodeStatus', 'Node API 已保存'); };
+  $('testNodeBtn').onclick = () => testNode().catch(e => log('nodeStatus', '连接失败：' + e.message));
+  $('createWalletBtn').onclick = () => createWallet().catch(e => log('walletLog', '创建失败：' + e.message));
+  $('keystoreFile').onchange = async (ev) => {
+    try {
+      const file = ev.target.files[0]; if (!file) return;
+      importKeystoreObject(JSON.parse(await file.text()));
+    } catch (e) { log('walletLog', '导入失败：' + e.message); }
+  };
+  $('importTextBtn').onclick = () => {
+    try { importKeystoreObject(JSON.parse($('keystoreText').value)); } catch(e) { log('walletLog', '导入失败：' + e.message); }
+  };
+  $('unlockBtn').onclick = () => unlockKeystore().catch(e => log('walletLog', '解锁失败：' + e.message));
+  $('lockBtn').onclick = () => { currentPrivateKey = null; setStatus(); log('walletLog', '已锁定。'); };
+  $('downloadKeystoreBtn').onclick = () => {
+    if (!currentKeystore) return log('walletLog', '没有可下载的 keystore');
+    downloadJson(`realchain_keystore_${currentKeystore.address}.json`, currentKeystore);
+  };
+  $('clearWalletBtn').onclick = () => { currentKeystore = null; currentPrivateKey = null; currentAddress = null; setStatus(); log('walletLog', '当前页面钱包已清除。'); };
+  $('refreshBalanceBtn').onclick = () => refreshBalance().catch(e => log('walletLog', '刷新失败：' + e.message));
+  $('copyAddressBtn').onclick = () => {
+    if (currentKeystore?.address) navigator.clipboard.writeText(currentKeystore.address);
+  };
+  $('sendTxBtn').onclick = () => sendTx().catch(e => log('txLog', '发送失败：' + e.message));
+});

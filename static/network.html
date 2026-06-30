@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RealChain-BTC Network Monitor</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<header class="topbar">
+  <div>
+    <strong>RealChain-BTC V2 Final</strong>
+    <span>Network Monitor</span>
+  </div>
+  <nav>
+    <a href="index.html">首页</a>
+    <a href="wallet.html">钱包</a>
+  </nav>
+</header>
+
+<main>
+  <section class="card">
+    <h2>Node A / Node B</h2>
+    <div class="grid two compact">
+      <div>
+        <label>Node A API</label>
+        <input id="nodeA" placeholder="http://192.168.31.210:8111" />
+      </div>
+      <div>
+        <label>Node B API</label>
+        <input id="nodeB" placeholder="http://192.168.31.xxx:8111" />
+      </div>
+    </div>
+    <div class="row">
+      <button id="saveBtn">保存地址</button>
+      <button id="refreshBtn" class="primary">刷新状态</button>
+      <button id="syncABtn">Node A 立即同步</button>
+      <button id="syncBBtn">Node B 立即同步</button>
+      <label class="check"><input id="autoRefresh" type="checkbox" checked /> 自动刷新</label>
+    </div>
+    <p class="hint">节点之间应在启动参数 <code>--peers</code> 里自动连接。这个页面只负责观察和测试。</p>
+  </section>
+
+  <section id="syncSummary" class="card summary">等待刷新</section>
+
+  <section class="grid two">
+    <div class="card">
+      <h2>Node A 状态</h2>
+      <pre id="nodeAStatus" class="log"></pre>
+    </div>
+    <div class="card">
+      <h2>Node B 状态</h2>
+      <pre id="nodeBStatus" class="log"></pre>
+    </div>
+  </section>
+
+  <section class="grid two">
+    <div class="card">
+      <h2>Node A Mempool</h2>
+      <pre id="nodeAMempool" class="log"></pre>
+    </div>
+    <div class="card">
+      <h2>Node B Mempool</h2>
+      <pre id="nodeBMempool" class="log"></pre>
+    </div>
+  </section>
+</main>
+
+<script src="network.js"></script>
+</body>
+</html>

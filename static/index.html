@@ -1,12 +1,32 @@
 <!doctype html>
 <html lang="zh-CN">
-<head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>RealChain-BTC V1 Web Wallet</title><link rel="stylesheet" href="/style.css"/></head>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RealChain-BTC V2 Final</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
 <body>
-<header><div><h1>RealChain-BTC V1</h1><p>非托管网页钱包：私钥在浏览器本地，节点只验证 signed transaction，矿工独立运行。</p></div><div class="badge">Bitcoin-like Lab Network</div></header>
-<main>
-<section class="card"><h2>1. 节点连接</h2><div class="row"><label>Node API</label><input id="nodeUrl" value="http://127.0.0.1:8111"/><button onclick="saveNodeUrl()">保存</button><button onclick="loadNodeStatus()">连接测试</button></div><pre id="nodeStatus">未连接</pre></section>
-<section class="grid"><div class="card"><h2>2. 创建 / 导入 / 解锁钱包</h2><p class="warn">密码只用于解密浏览器本地私钥，不会发送给节点。刷新页面后钱包回到锁定状态。</p><div class="row"><label>钱包密码</label><input id="walletPassword" type="password" placeholder="输入本地钱包密码"/></div><div class="buttons"><button onclick="createWallet()">创建新钱包</button><button onclick="unlockWallet()">解锁本地钱包</button><button onclick="logoutWallet()">锁定钱包</button></div><div class="buttons"><button onclick="exportWallet()">导出加密钱包 JSON</button><button onclick="importWallet()">导入加密钱包 JSON</button><button class="danger" onclick="forgetLocalWallet()">从本浏览器移除钱包</button></div><textarea id="walletBackup" placeholder="导出/导入加密钱包 JSON。这里面是加密私钥，也要妥善保管。"></textarea></div>
-<div class="card"><h2>3. 我的钱包</h2><div class="kv"><span>状态</span><b id="walletState">未检测</b></div><div class="kv"><span>地址</span><code id="myAddress">-</code></div><div class="kv"><span>余额</span><b id="myBalance">0 RLC</b></div><div class="buttons"><button onclick="copyAddress()">复制地址</button><button onclick="refreshWalletData()">刷新余额</button></div><p class="small">挖矿不在钱包页面完成。请运行独立矿工程序：<code>python miner.py --node http://127.0.0.1:8111 --reward-address 你的地址 --once</code></p><h3>我的 UTXO</h3><div id="utxoList" class="list"></div></div></section>
-<section class="card"><h2>4. 转账</h2><div class="row"><label>收款地址</label><input id="toAddress" placeholder="RLC_xxx"/></div><div class="row"><label>金额</label><input id="amount" type="number" min="1" step="1" value="1"/></div><div class="row"><label>手续费</label><input id="fee" type="number" min="0" step="1" value="1"/></div><button onclick="createAndSubmitTx()">本地签名并提交交易</button><pre id="txResult">等待操作</pre></section>
-<section class="grid"><div class="card"><h2>5. 交易池 Mempool</h2><button onclick="loadMempool()">刷新交易池</button><div id="mempoolList" class="list"></div></div><div class="card"><h2>6. 最新区块</h2><button onclick="loadBlocks()">刷新区块</button><div id="blockList" class="list"></div></div></section>
-</main><script src="/wallet.js"></script></body></html>
+  <main class="home">
+    <section class="hero">
+      <div class="badge">RealChain-BTC V2 Final</div>
+      <h1>局域网双节点区块链实验网络</h1>
+      <p>V2 是 V1 的累计版本：保留钱包、签名交易、UTXO、独立挖矿，并新增 Node A / Node B 自动互联、交易广播、区块广播和自动同步。</p>
+      <div class="actions">
+        <a class="button primary" href="wallet.html">打开钱包页面</a>
+        <a class="button" href="network.html">打开网络监控页面</a>
+      </div>
+    </section>
+    <section class="grid two">
+      <div class="card">
+        <h2>wallet.html</h2>
+        <p>只负责创建 keystore、导入 keystore、解锁钱包、查看余额和发起转账。私钥只在当前电脑浏览器内临时解锁。</p>
+      </div>
+      <div class="card">
+        <h2>network.html</h2>
+        <p>只负责观察 Node A 和 Node B 的连接、区块高度、tip hash、mempool 和同步状态。</p>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
